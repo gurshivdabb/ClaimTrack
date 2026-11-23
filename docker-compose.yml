@@ -1,0 +1,53 @@
+# Runs ClaimTrack with one command: docker compose up --build
+# Then open http://localhost:8080/swagger and log in with a demo account (see README.md).
+#
+# Secrets come from a .env file next to this one (copy .env.example to .env and fill it in).
+# .env is git-ignored. If a value is missing, compose stops with the message after ":?".
+
+name: claimtrack
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in .env (see .env.example)}
+    volumes:
+      # Its own volume, separate from the claimtrack-sql container used for local development.
+      - claimtrack-compose-data:/var/opt/mssql
+    # No "ports": SQL Server is only reachable by the API, over compose's private network.
+    # One less open port, and no clash with a SQL Server already using 1433 on this PC.
+    healthcheck:
+      # Healthy once SQL Server can run a query. $$ passes a literal $ to the container's shell.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  api:
+    build: .
+    image: claimtrack-api
+    depends_on:
+      db:
+        condition: service_healthy # don't start until SQL Server answers queries
+    ports:
+      - "8080:8080"
+    volumes:
+      # Uploaded claim documents, kept across restarts (the image makes this folder writable).
+      - claimtrack-documents:/data/documents
+    environment:
+      # Development: Swagger and demo data, so the stack can be explored straight away.
+      # A real deployment would leave this unset (Production).
+      ASPNETCORE_ENVIRONMENT: Development
+      # Apply EF Core migrations on startup, so the database is created automatically.
+      Database__MigrateOnStartup: "true"
+      # "db" is the SQL Server service's name on compose's network. The sa account is fine for a
+      # local demo; production would use a login that can only read and write data.
+      ConnectionStrings__ClaimTrack: "Server=db,1433;Database=ClaimTrack;User Id=sa;Password=${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in .env (see .env.example)};Encrypt=True;TrustServerCertificate=True"
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in .env (see .env.example)}
+      Seed__DemoPassword: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env (see .env.example)}
+
+volumes:
+  claimtrack-compose-data:
+  claimtrack-documents:

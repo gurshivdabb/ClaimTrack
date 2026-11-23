@@ -1,0 +1,33 @@
+# Files Docker should never send to the build. Keeps the build fast and stops local
+# leftovers (build output, test results, editor settings) from ending up in an image.
+
+# Build output, test results, and locally uploaded documents
+**/bin/
+**/obj/
+**/App_Data/
+**/TestResults/
+TestResults/
+
+# Version control and editor settings
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+**/*.user
+
+# Not needed to build the API
+frontend/
+tests/
+docs/
+*.md
+ClaimTrack.slnx
+*.http
+dotnet-tools.json
+Dockerfile
+.dockerignore
+
+# Never send anything that looks like a secret
+**/secrets.json
+**/*.env
+**/.env

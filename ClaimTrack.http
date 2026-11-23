@@ -1,0 +1,102 @@
+# ClaimTrack walkthrough: one claim's whole life.
+# Run the requests in order ("Send Request" above each one) in VS Code with the REST Client
+# extension, or in Visual Studio.
+#
+# Needs: `docker compose up` running, and .env in this folder (the demo password is read from it,
+# so it never has to be typed into this file).
+# For `dotnet run` instead of Docker, change @api to http://localhost:5016.
+
+@api = http://localhost:8080
+@password = {{$dotenv DEMO_PASSWORD}}
+
+### Log in as each role
+# @name priya
+POST {{api}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "priya.singh@claimtrack.test", "password": "{{password}}" }
+
+###
+# @name supervisor
+POST {{api}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "supervisor@claimtrack.test", "password": "{{password}}" }
+
+###
+# @name adjuster
+POST {{api}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "adjuster1@claimtrack.test", "password": "{{password}}" }
+
+### 1. The policyholder lists her policies (the first one is her active Auto policy)
+# @name policies
+GET {{api}}/api/policies
+Authorization: Bearer {{priya.response.body.$.accessToken}}
+
+### 1b. ...and submits a claim against it
+# @name claim
+POST {{api}}/api/claims
+Authorization: Bearer {{priya.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "policyId": "{{policies.response.body.$[0].id}}",
+  "incidentDate": "{{$datetime 'YYYY-MM-DD'}}",
+  "description": "Rear-ended at a red light; rear bumper and trunk damaged.",
+  "claimedAmount": 2400.00
+}
+
+### 2. The supervisor lists the adjusters (sorted by name, so Jane Doe = adjuster1 comes first)
+# @name adjusters
+GET {{api}}/api/users?role=Adjuster
+Authorization: Bearer {{supervisor.response.body.$.accessToken}}
+
+### 2b. ...and assigns the claim to the first one
+POST {{api}}/api/claims/{{claim.response.body.$.id}}/assign
+Authorization: Bearer {{supervisor.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "adjusterId": "{{adjusters.response.body.$[0].id}}" }
+
+### 3. The adjuster starts the review
+POST {{api}}/api/claims/{{claim.response.body.$.id}}/start-review
+Authorization: Bearer {{adjuster.response.body.$.accessToken}}
+
+### 3b. ...and recommends
+POST {{api}}/api/claims/{{claim.response.body.$.id}}/recommendation
+Authorization: Bearer {{adjuster.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "recommendation": "Approve", "notes": "Repair estimate matches the photos and the police report." }
+
+### 4. The supervisor decides (to deny instead: "decision": "Deny", "reason": "<at least 10 characters>")
+POST {{api}}/api/claims/{{claim.response.body.$.id}}/decision
+Authorization: Bearer {{supervisor.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "decision": "Approve" }
+
+### 5. The policyholder reads the full history
+GET {{api}}/api/claims/{{claim.response.body.$.id}}/history
+Authorization: Bearer {{priya.response.body.$.accessToken}}
+
+### Lists: filtered, sorted, paged
+GET {{api}}/api/claims?status=Approved&sort=-claimedAmount&pageSize=2
+Authorization: Bearer {{supervisor.response.body.$.accessToken}}
+
+### Errors: withdrawing an approved claim → 409
+POST {{api}}/api/claims/{{claim.response.body.$.id}}/withdraw
+Authorization: Bearer {{priya.response.body.$.accessToken}}
+
+### Errors: page size over 100 → 400
+GET {{api}}/api/claims?pageSize=500
+Authorization: Bearer {{priya.response.body.$.accessToken}}
+
+### Errors: a supervisor can't submit claims → 403
+POST {{api}}/api/claims
+Authorization: Bearer {{supervisor.response.body.$.accessToken}}
+Content-Type: application/json
+
+{}
