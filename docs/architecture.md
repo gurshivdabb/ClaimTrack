@@ -15,7 +15,6 @@
 | Testing | xUnit, AwesomeAssertions, `FakeTimeProvider`, `WebApplicationFactory`, Testcontainers; coverlet + ReportGenerator for coverage | Unit tests for rules, integration tests against a real SQL Server |
 | Docs | Swagger / OpenAPI | Lets anyone try the API in a browser |
 | DevOps | Docker, docker compose | One-command setup |
-| Front end (Phase 4) | Angular 21 (standalone components, signals), Angular Material re-themed, Vitest | Angular is the most common SPA framework in enterprise .NET shops; TypeScript and dependency injection feel familiar from C#/Java. Material gives accessible form controls; the look is our own |
 
 Packages are added **only when the current phase needs them**.
 
@@ -25,17 +24,13 @@ Packages are added **only when the current phase needs them**.
 
 ```
 ClaimTrack/
-├── CLAUDE.md
 ├── README.md
 ├── ClaimTrack.http               Runnable walkthrough requests (VS Code REST Client / Visual Studio)
 ├── Dockerfile                    Multi-stage build of the API image
 ├── docker-compose.yml            SQL Server + API with one command
 ├── .env.example                  Settings for docker compose (copy to the git-ignored .env)
 ├── docs/
-│   ├── requirements.md
 │   ├── architecture.md
-│   ├── progress.md
-│   ├── concepts.md               Interview study notes, updated after each task
 │   └── test-matrix.md            Which tests prove each business rule and endpoint
 ├── src/
 │   └── ClaimTrack.Api/
@@ -53,19 +48,9 @@ ClaimTrack/
 │       ├── Common/                   Result type, exceptions, pagination
 │       ├── Middleware/               Global exception handling
 │       └── Program.cs                Startup and dependency injection
-├── tests/
-│   ├── ClaimTrack.UnitTests/
-│   └── ClaimTrack.IntegrationTests/
-└── frontend/                     Angular app (Phase 4), its own npm project
-    ├── proxy.conf.json           Dev server forwards /api to the API on :5016
-    └── src/
-        ├── styles.scss           Design tokens (colours, type, spacing) + Material theme
-        ├── testing/              Test helpers
-        └── app/
-            ├── core/             App-wide services: auth (session, interceptor, guards), API errors, models
-            ├── layout/           The signed-in shell (navigation, account bar)
-            ├── shared/           Small reusable components (status tag)
-            └── features/         One folder per area: auth, claims, policies
+└── tests/
+    ├── ClaimTrack.UnitTests/
+    └── ClaimTrack.IntegrationTests/
 ```
 
 I'm using **one API project with folders** instead of several class-library
@@ -170,7 +155,7 @@ AppDbContext (EF Core) ── talks to SQL Server
 ### Testing
 - Test names: `MethodName_Scenario_ExpectedResult`, e.g. `DecideClaim_WithoutRecommendation_ReturnsConflict`.
 - Arrange / Act / Assert structure.
-- Every business rule in requirements.md has at least one unit test.
+- Every business rule (BR-01 to BR-12, listed in the README) has at least one unit test.
 - Every endpoint has at least one integration test covering success and one failure.
 
 ---
@@ -194,8 +179,8 @@ Add an entry whenever an important choice is made, so I can explain it later.
 | 2026-11-18 | Secure by default with `MapControllers().RequireAuthorization()`, not a global fallback policy; roles via `[Authorize(Roles = nameof(Role.X))]` | Every controller endpoint needs a token unless marked `[AllowAnonymous]`, matching §5. A fallback policy would also apply to unknown URLs and answer 401 instead of 404. `nameof` turns a misspelt role into a compile error. A unit test fails if `[AllowAnonymous]` appears outside `AuthController` |
 | 2026-11-19 | Audit entries are added to the same `DbContext` and saved by the service's single `SaveChangesAsync`; no explicit transaction. `AppDbContext` refuses to save modified or deleted audit entries | One `SaveChanges` is one database transaction, so a change and its audit entry are saved together or not at all (BR-07). The guard is a safety net for BR-08; it can't see bulk `ExecuteUpdate`/`ExecuteDelete`, which a production system would block with database permissions |
 | 2026-11-19 | Claims list returns a page envelope (`items`, `page`, `pageSize`, `totalCount`, `totalPages`); bad paging/sort values get 400, not silently corrected; max page size 100; every sort ends with `Id` as a tie-breaker | Self-describing and visible in Swagger. 400 tells the client exactly what's wrong. The cap stops huge requests. Without a unique tie-breaker, equal values can come back in a different order per query, so a claim could appear on two pages or none. The count runs after the BR-09 filter, so totals never reveal other users' claims |
-| 2026-11-20 | Supervisor-only `GET /api/users?role=` returning only ID, name, and role; EF SQL command logs lowered to Warning | The front end needs to pick an adjuster to assign and a policyholder for a new policy, so supervisors need to see who's who; returning only what's needed keeps emails private. SQL logs were kept visible for learning until UI work began |
-| 2026-11-22 | Front end: Angular 21 in `frontend/`; dev proxy (same origin, so no CORS); token in `sessionStorage`, added only to `/api/` requests; sign out on 401 or at token expiry; `returnUrl` limited to in-app paths; guards are UX only; "carbon copy" design (status tints from multi-part claim forms, Atkinson Hyperlegible Next self-hosted, Material re-themed) | Angular 22 needs Node 24.15+, so 21 (still supported) runs on the installed Node. The proxy means the browser only ever talks to one origin, so the API needs no CORS policy. `sessionStorage` ends with the tab; an HttpOnly cookie would hide the token from scripts but would need CSRF protection and API changes, so the defence against script theft is no third-party scripts and Angular's escaping. Never sending the token to other hosts and rejecting outside return URLs (open redirect) close two common holes. The API enforces every rule; the UI only hides what you can't use |
+| 2026-11-25 | ClaimTrack stays a backend-only project: the Angular front end (built as Phase 4 extras) was removed, and Azure deployment was dropped | The project's goal is to show backend skills for .NET roles; a front end and cloud deployment I couldn't fully explain would dilute that. The API is explored through Swagger and the `ClaimTrack.http` walkthrough, and runs with `docker compose up`. The supervisor-only users lookup stays: it's a useful API feature on its own |
+| 2026-11-20 | Supervisor-only `GET /api/users?role=` returning only ID, name, and role; EF SQL command logs lowered to Warning | Supervisors need to pick an adjuster to assign and a policyholder for a new policy, so they need to see who's who; returning only what's needed keeps emails private. SQL logs were kept visible for learning until then |
 | 2026-11-20 | Documents: anyone who can see a claim may list/download/upload (uploads only while not final); PDF/PNG/JPEG identified by magic bytes; 10 MB and 20 per claim; stored on disk under random GUID keys behind `IDocumentStorage`, outside `/app` (a volume in Docker); names cleaned for display only; downloads as attachments with `nosniff`; never deleted; uploads audited; a download endpoint added | Uploads are a classic attack surface: names and Content-Type are attacker-controlled, so neither is trusted. Disk + interface keeps the database small and makes Azure Blob a drop-in. The file is written first and deleted if the database save fails, so there are no orphans. Not handled, documented: malware scanning |
 | 2026-11-20 | Overdue claims: a `BackgroundService` (startup, then hourly on a `TimeProvider`-driven `PeriodicTimer`) runs a scoped `OverdueClaimsService` that sets `Claim.FlaggedOverdueAt` with one idempotent SQL `UPDATE`; the clock starts at the `ReviewStarted` audit entry; the flag is kept after a decision; `?overdue=` filter; not audited; disabled in tests except where switched on | A stored flag gives supervisors a triage list and records when a claim went overdue. Deriving the start from the audit log avoids a second copy of the same fact. Idempotent update means several API copies can't double-flag. Errors are caught per run, because an unhandled exception in a background service stops the whole app. No audit entry, because audit actors must be real users |
 | 2026-11-20 | Built-in ASP.NET Core rate limiting: login/register 5 a minute per IP; everything else 100 a minute per user (IP if anonymous); health checks exempt; sliding windows; rejected immediately with 429 + `Retry-After`; limits configurable and validated at startup | Slows password guessing, the one known security gap. Sliding windows stop a client sending a double burst across a minute boundary. No queue, so attackers can't tie up the server. Known limits, documented: per-IP only (account lockout would be the next layer), needs trusted forwarded headers behind a proxy, and counters are per instance (a shared store for several instances) |

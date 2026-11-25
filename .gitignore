@@ -3,6 +3,12 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# Personal working notes, kept on this PC only (not part of the public repo)
+docs/CLAUDE.md
+docs/progress.md
+docs/requirements.md
+docs/concepts.md
+
 # dotenv files
 .env
 

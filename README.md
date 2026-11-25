@@ -405,8 +405,8 @@ Deliberate trade-offs for a portfolio-sized project, and what a production syste
 ## Roadmap
 
 Phase 3 is complete, and Phase 4 (optional extras) has added health checks, rate limiting, the
-overdue-claims background job, and document uploads. Planned next: an Angular front end, and
-deploying to Azure (App Service + Azure SQL + Blob Storage).
+overdue-claims background job, and document uploads. Planned next: optimistic concurrency on
+claims (two people acting on the same claim at once), a CI pipeline, and internal staff notes.
 
 ## Project docs
 

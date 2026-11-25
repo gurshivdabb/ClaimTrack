@@ -17,7 +17,6 @@ TestResults/
 **/*.user
 
 # Not needed to build the API
-frontend/
 tests/
 docs/
 *.md
