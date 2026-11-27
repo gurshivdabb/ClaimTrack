@@ -30,4 +30,10 @@ public class Claim
     // Set once by OverdueClaimsJob when the claim has been UnderReview for too long (14 days by
     // default). Kept after a decision, as a record that the claim went overdue.
     public DateTimeOffset? FlaggedOverdueAt { get; set; }
+
+    // Optimistic concurrency (like JPA's @Version). SQL Server changes this value automatically every
+    // time the row is updated, and EF Core only saves if it's still the value it read. So when two
+    // people change the same claim at once, the second save finds a different value, nothing is
+    // saved, and ClaimService answers 409 Conflict. Never set by our code; not part of the API.
+    public byte[] RowVersion { get; set; } = [];
 }

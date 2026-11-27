@@ -32,6 +32,11 @@ public class ClaimConfiguration : IEntityTypeConfiguration<Claim>
             .HasConversion<string>()
             .HasMaxLength(10);
 
+        // A SQL Server rowversion column, used as a concurrency token: every UPDATE EF sends for a
+        // claim includes "AND RowVersion = <the value I read>", so a stale copy can't overwrite a newer one.
+        builder.Property(c => c.RowVersion)
+            .IsRowVersion();
+
         // The Policy relationship is configured in PolicyConfiguration,
         // and the AssignedAdjuster relationship in UserConfiguration.
     }

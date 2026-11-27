@@ -8,6 +8,7 @@ docs/CLAUDE.md
 docs/progress.md
 docs/requirements.md
 docs/concepts.md
+docs/decisions.md
 
 # dotenv files
 .env

@@ -126,9 +126,7 @@ public class ClaimService(
         claim.Description = request.Description;
         claim.ClaimedAmount = request.ClaimedAmount;
 
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Result<ClaimResponse>.Ok(claim.ToResponse());
+        return await SaveAsync(claim, cancellationToken);
     }
 
     public async Task<Result<ClaimResponse>> AssignAsync(
@@ -160,9 +158,7 @@ public class ClaimService(
         claim.AssignedAdjusterId = request.AdjusterId;
 
         audit.Record(claim, AuditAction.Assigned, details: $"Assigned to {adjusterName}"); // BR-07
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Result<ClaimResponse>.Ok(claim.ToResponse());
+        return await SaveAsync(claim, cancellationToken);
     }
 
     // Submitted → UnderReview. Only the assigned adjuster can see the claim (BR-09),
@@ -221,9 +217,7 @@ public class ClaimService(
         claim.AdjusterNotes = request.Notes.Trim();
 
         audit.Record(claim, AuditAction.Recommended, details: $"Recommended {request.Recommendation}"); // BR-07
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Result<ClaimResponse>.Ok(claim.ToResponse());
+        return await SaveAsync(claim, cancellationToken);
     }
 
     // BR-09: every lookup by ID goes through the visibility filter, so a claim you can't see is 404.
@@ -265,7 +259,26 @@ public class ClaimService(
 
         // BR-07: saved in the same SaveChangesAsync (one transaction) as the status change.
         audit.Record(claim, auditAction, oldStatus, newStatus, auditDetails);
-        await db.SaveChangesAsync(cancellationToken);
+        return await SaveAsync(claim, cancellationToken);
+    }
+
+    // Saves a change to an existing claim (and its audit entry) in one transaction.
+    //
+    // Optimistic concurrency: if someone else changed this claim after we loaded it, its RowVersion
+    // no longer matches, EF Core saves nothing (not even the audit entry) and throws. That's an
+    // expected outcome when two people act at once, not a bug, so it becomes a 409 like any other
+    // conflict (BR-05: two decisions on one claim must never both succeed).
+    private async Task<Result<ClaimResponse>> SaveAsync(Claim claim, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ClaimResponse>.Conflict(
+                "This claim was changed by someone else at the same time. Reload it and try again.");
+        }
 
         return Result<ClaimResponse>.Ok(claim.ToResponse());
     }

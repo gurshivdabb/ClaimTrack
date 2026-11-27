@@ -18,7 +18,7 @@ auditability, and tests.
   action; anything else is rejected with 409. One test checks all 25 combinations.
 - **An append-only audit trail**, written in the **same database transaction** as each change,
   so a change can't happen without its history (and the history can't be rewritten).
-- **458 automated tests**, including integration tests against a **real SQL Server** in a
+- **463 automated tests**, including integration tests against a **real SQL Server** in a
   throwaway container (98.5% line coverage). Every business rule is traced to its tests.
 - **Production habits:** rate-limited login (password guessing is slowed to 5 tries a minute),
   health checks, structured JSON logging that never logs tokens, RFC 7807 error responses,
@@ -275,9 +275,6 @@ downloads are sent as attachments with `X-Content-Type-Options: nosniff`.
 
 ## Key design decisions
 
-Each one is explained in full, with the trade-off, in the
-[decisions log](docs/architecture.md#7-decisions-log).
-
 | Decision | Why |
 |---|---|
 | **404 instead of 403** for other users' data, filtered **in the SQL query** | Doesn't reveal that a record exists, and other users' rows are never even loaded (OWASP "Broken Access Control") |
@@ -287,6 +284,7 @@ Each one is explained in full, with the trade-off, in the
 | **SQL Server sequences** for `POL-2026-00001` / `CLM-…` numbers | Unique under concurrent requests (unlike "max + 1"); gaps are accepted |
 | **Real SQL Server in integration tests** (Testcontainers), no in-memory database or mocked `DbContext` | Tests exercise real constraints, sequences, transactions, and SQL translation |
 | **Validation split:** input checks in FluentValidation (400), rules needing data in services (422) | Validators stay database-free; business rules live in one layer |
+| **Optimistic concurrency** on claims (a SQL Server `rowversion` checked by EF Core) | If two people act on the same claim at once (say, one approves while another denies), only the first change is saved; the second gets 409 and nothing, not even an audit entry, is written. No locks are held while reading |
 | **One role per account** | Separation of duties: a supervisor can never approve their own claim |
 | **Secrets never in source control** | `dotnet user-secrets` locally, environment variables / `.env` in Docker; the API refuses to start without a valid signing key |
 
@@ -298,7 +296,7 @@ dotnet test
 
 - **Unit tests** (`tests/ClaimTrack.UnitTests`, 264): validators, business rules, the state
   machine, visibility filters, token creation, mappings. No database.
-- **Integration tests** (`tests/ClaimTrack.IntegrationTests`, 194): the real API over HTTP via
+- **Integration tests** (`tests/ClaimTrack.IntegrationTests`, 199): the real API over HTTP via
   `WebApplicationFactory`, against SQL Server started by
   [Testcontainers](https://dotnet.testcontainers.org/) for the run. **Docker must be running.**
   They cover every endpoint (a success and a failure each), every role restriction, the audit
@@ -385,6 +383,12 @@ Deliberate trade-offs for a portfolio-sized project, and what a production syste
 - **Two rare race conditions** (deleting a policy while a claim is filed at the same instant;
   registering the same email twice at once) return 500 instead of 409. The database constraints
   still keep the data correct.
+- **Concurrency covers changes to a claim itself.** Uploading a document adds a row without
+  changing the claim, so an upload racing a final decision could still be accepted; policy edits
+  aren't checked either. The server re-checks every rule when saving, but it doesn't know what a
+  client *saw*: the full HTTP answer is an `ETag` on `GET /api/claims/{id}` and `If-Match` on
+  changes (412 if stale), which would change the API's contract. The hourly overdue job also
+  updates claims, so in rare cases a user's change hits a 409 and simply needs retrying.
 - **Rate limits are per IP, not per account.** An attacker spreading guesses across many IPs isn't
   slowed; the next layer would be account lockout after repeated failed logins. Behind a load
   balancer, the API would also need ASP.NET Core's forwarded-headers support set to trust only
@@ -405,10 +409,10 @@ Deliberate trade-offs for a portfolio-sized project, and what a production syste
 ## Roadmap
 
 Phase 3 is complete, and Phase 4 (optional extras) has added health checks, rate limiting, the
-overdue-claims background job, and document uploads. Planned next: optimistic concurrency on
-claims (two people acting on the same claim at once), a CI pipeline, and internal staff notes.
+overdue-claims background job, document uploads, and optimistic concurrency on claims. Planned
+next: a CI pipeline, and internal staff notes.
 
 ## Project docs
 
-- [Architecture](docs/architecture.md): layers, coding standards, decisions log
+- [Architecture](docs/architecture.md): layers, coding standards
 - [Test matrix](docs/test-matrix.md): which tests prove each business rule and endpoint
